@@ -1,0 +1,24 @@
+# Generated media output from running the skills
+*.mp4
+*.mov
+*.mp3
+*.wav
+*.ogg
+*.gif
+h3_output_*
+h3_audio_*
+thumbnail_*
+preview_*
+output_song.*
+waveform*.png
+
+# Secrets / env
+.env
+.env.*
+*.key
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
