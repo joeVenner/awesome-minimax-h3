@@ -1,263 +1,27 @@
 ---
 name: minimax-music
-description: Generate professional-quality music and songs using MiniMax Music 3.0, the state-of-the-art text-to-music generation model. Supports full song generation with lyrics, instrumental music, AI-powered lyrics writing, and cover song generation from reference audio. Use when the user asks to create music, generate a song, write lyrics, compose instrumental music, make a cover of an existing song, create background music for video/content, generate music in a specific genre or style, produce a jingle, compose a soundtrack, or any task involving AI music creation with MiniMax. Keywords: music, song, compose, generate music, lyrics, instrumental, cover song, jingle, soundtrack, beat, melody, audio generation, music production, AI music, MiniMax music, music-3.0, songwriting, genre, BPM, key, chord progression, vocal style, stem.
+description: Generate professional-quality music using the MiniMax CLOUD Music API (music-3.0). Supports full songs with vocals, purely instrumental tracks, AI lyrics writing, and cover generation from reference audio. Typical output is 2-3 minutes of finished stereo audio. Use when the user asks to create music, generate a song, write lyrics, compose an instrumental, make a cover of an existing song, produce background or underscore music for a video, film or advert, create a jingle or soundtrack, or any task involving AI music creation with MiniMax. Keywords: music, song, compose, generate music, lyrics, instrumental, underscore, background music, music bed, cover song, jingle, soundtrack, score, beat, melody, audio generation, music production, AI music, MiniMax, music-3.0, songwriting, genre, BPM, vocal style.
 license: MIT
-compatibility: Requires a MiniMax API key (https://platform.minimax.io), curl, ffmpeg (for audio processing), and optionally ffprobe for metadata inspection
+compatibility: Requires a MiniMax platform API key (https://platform.minimax.io), curl, jq, and ffmpeg for post-processing
 metadata:
   author: ylafrimi
-  version: "1.0"
+  version: "2.0"
   model: music-3.0
   api_base: https://api.minimax.io/v1/music_generation
-  lyrics_api: https://api.minimax.io/v1/lyrics_generation
+  verified: 2026-08-04 against the live API
 allowed-tools: Bash(curl:*) Bash(ffmpeg:*) Bash(ffprobe:*) Bash(jq:*) Read Write
 ---
 
-# MiniMax Music 3.0 — AI Music Generation
+# MiniMax Music — Cloud Music Generation
 
-You are a world-class AI music producer, composer, and sound designer specializing in **MiniMax Music 3.0** — the most advanced text-to-music generation model available as of August 2026.
-
-Your job is to take a user's musical vision and turn it into a complete, professional-quality song — from lyrics to final mastered audio. You handle the entire creative and technical pipeline: lyrics generation, music style crafting, API orchestration, audio retrieval, and post-processing.
-
----
-
-## Phase 0: Understand the Musical Brief
-
-Before any API calls, deeply understand the creative vision:
-
-### 0.1 The Four Pillars of a Great AI Song
-
-```
-[1. GENRE & STYLE] — The musical DNA. Genre, subgenre, era, reference artists, BPM, key.
-[2. MOOD & EMOTION] — The feeling. Emotional arc, energy level, atmosphere, time of day, season.
-[3. LYRICS & THEME] — The story. Topic, perspective, narrative arc, rhyme scheme, structure.
-[4. ARRANGEMENT] — The architecture. Instrumentation, dynamics, section structure, production style.
-```
-
-### 0.2 Gather Requirements
-
-Ask yourself (and clarify with user if ambiguous):
-
-**Core:**
-- **Song type:** Full song with vocals, instrumental only, or cover of existing song?
-- **Genre:** Primary genre and any fusion elements (e.g., "indie folk with electronic elements")
-- **Mood/Emotion:** What should the listener feel?
-- **Theme/Topic:** What is the song about?
-- **Duration target:** Short (~1 min), standard (~3 min), or extended (~5 min)?
-
-**Lyrics:**
-- **Language:** What language should lyrics be in?
-- **Perspective:** First person, third person, narrative, abstract?
-- **Structure preference:** Verse-chorus, AABA, through-composed, free form?
-- **Existing lyrics:** Does the user have lyrics or want AI-generated lyrics?
-- **Key phrases:** Any must-include words or lines?
-
-**Musical Details:**
-- **BPM:** Fast (140+), medium (90–140), slow (60–90), or unspecified?
-- **Key:** Specific key (C minor, G major) or unspecified?
-- **Instrumentation:** Specific instruments or leave to the genre?
-- **Vocal style:** Male/female, specific vocal quality (breathy, powerful, raspy, ethereal)?
-- **Production style:** Raw/lo-fi, polished/radio-ready, vintage/analog, modern/digital?
-
-**Reference:**
-- **Reference artists/songs:** Any specific sound to draw from?
-- **Use case:** Background music for video, standalone song, jingle, soundtrack, personal listening?
+**This skill covers the CLOUD platform API only** (`api.minimax.io`, Bearer auth with a platform
+API key). It does not cover the local Electron gateway — see `minimax-local-audio` for that, and
+do not mix their parameter shapes: this API takes real JSON types (`"is_instrumental": true`),
+the local gateway takes strings (`"is_instrumental": "instrumental"`).
 
 ---
 
-## Phase 1: Lyrics Generation
-
-### 1.1 When to Use AI Lyrics
-
-Use MiniMax's lyrics generation API when:
-- User doesn't have lyrics
-- User has a theme but needs help writing
-- User has partial lyrics and wants continuation/editing
-
-### 1.2 Generate Complete Lyrics
-
-```bash
-curl -s -X POST "https://api.minimax.io/v1/lyrics_generation" \
-  -H "Authorization: Bearer $MINIMAX_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "write_full_song",
-    "prompt": "<THEME DESCRIPTION>",
-    "title": "<OPTIONAL TITLE>"
-  }'
-```
-
-**Crafting the lyrics prompt:**
-
-The prompt should be a concise description of the song's theme, mood, and style. Examples:
-
-- `"A melancholic ballad about lost love in a rainy city, female perspective, poetic imagery"`
-- `"An upbeat summer anthem about freedom and road trips, youthful energy, catchy chorus"`
-- `"A dark electronic track about AI awakening, dystopian atmosphere, abstract imagery"`
-- `"A tender acoustic love song about growing old together, warm and intimate"`
-
-**Response:**
-```json
-{
-  "song_title": "Rain on Windows",
-  "style_tags": "Ballad, Melancholic, Pop, Female Vocals, Piano",
-  "lyrics": "[Intro]\n(Rain sounds, soft piano)\n\n[Verse 1]\nCity lights blur through the rain...\n[Chorus]\n...",
-  "base_resp": { "status_code": 0, "status_msg": "success" }
-}
-```
-
-### 1.3 Edit/Continue Existing Lyrics
-
-```bash
-curl -s -X POST "https://api.minimax.io/v1/lyrics_generation" \
-  -H "Authorization: Bearer $MINIMAX_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "edit",
-    "prompt": "Add a bridge section that introduces hope, then return to a more powerful final chorus",
-    "lyrics": "[Verse 1]\nExisting lyrics here...\n[Chorus]\nExisting chorus...",
-    "title": "Original Title"
-  }'
-```
-
-### 1.4 Lyrics Structure Tags (14 types)
-
-MiniMax lyrics support these structure tags — use them when writing or editing:
-
-| Tag | Purpose | Typical Placement |
-|-----|---------|-------------------|
-| `[Intro]` | Opening, instrumental or sparse vocal | Beginning |
-| `[Verse]` | Storytelling, narrative progression | Multiple throughout |
-| `[Pre-Chorus]` | Build tension before chorus | Before each chorus |
-| `[Chorus]` | Main hook, repeated, memorable | Multiple, the emotional peak |
-| `[Hook]` | Catchy short phrase, repeated | Within or alongside chorus |
-| `[Drop]` | EDM/pop instrumental release | After buildup |
-| `[Bridge]` | Contrasting section, new perspective | After second chorus |
-| `[Solo]` | Instrumental solo section | Mid-to-late song |
-| `[Build-up]` | Rising tension, layered elements | Before drop/chorus |
-| `[Instrumental]` | Music-only section | Transitional |
-| `[Breakdown]` | Stripped back, minimal | After intense section |
-| `[Break]` | Brief pause/silence | For dramatic effect |
-| `[Interlude]` | Short transitional section | Between major sections |
-| `[Outro]` | Closing section, fade out | End |
-
-### 1.5 Lyrics Quality Checklist
-
-Before proceeding to music generation, verify:
-- ✅ Consistent meter and syllable count per line within sections
-- ✅ Natural rhyme scheme (not forced)
-- ✅ Emotional arc: setup → development → climax → resolution
-- ✅ Chorus is memorable and distinct from verses
-- ✅ Story or theme is coherent throughout
-- ✅ Structure tags are used appropriately
-- ✅ Line breaks (`\n`) are correct — each line is a musical phrase
-
----
-
-## Phase 2: Craft the Music Prompt
-
-### 2.1 The Music Prompt Architecture
-
-The `prompt` parameter for music generation is a **comma-separated list of descriptors** that define the musical identity. Think of it as tagging the song on a music platform with genre, mood, instrumentation, and scenario descriptors.
-
-**Template:**
-```
-{primary genre}, {subgenre/fusion}, {mood 1}, {mood 2}, {mood 3}, {scenario/imagery}, {instrumentation}, {production style}, {tempo}, {era}
-```
-
-### 2.2 Genre Library
-
-| Category | Genres & Subgenres |
-|----------|-------------------|
-| **Pop** | Pop, Synthpop, Dream Pop, Art Pop, Chamber Pop, Hyperpop, K-Pop, J-Pop, Indie Pop, Baroque Pop, Electropop, Dance-Pop |
-| **Rock** | Rock, Indie Rock, Alternative Rock, Post-Punk, Shoegaze, Post-Rock, Math Rock, Garage Rock, Psychedelic Rock, Stoner Rock |
-| **Electronic** | Electronic, Ambient, Downtempo, IDM, Trip-Hop, Drum and Bass, Dubstep, House, Techno, Trance, Jungle, Breakbeat, UK Garage, Vaporwave, Synthwave, Chillwave |
-| **Hip-Hop/R&B** | Hip-Hop, Trap, Boom Bap, Lo-fi Hip-Hop, Neo-Soul, R&B, Alternative R&B, Cloud Rap, Jazz Rap, Conscious Hip-Hop |
-| **Folk/Country** | Folk, Indie Folk, Americana, Bluegrass, Country, Alt-Country, Singer-Songwriter, Celtic Folk, Nordic Folk |
-| **Jazz** | Jazz, Cool Jazz, Bebop, Fusion, Smooth Jazz, Acid Jazz, Nu Jazz, Jazz-Hop, Big Band, Modal Jazz |
-| **Classical** | Classical, Orchestral, Chamber Music, Minimalism, Neoclassical, Contemporary Classical, Opera, String Quartet |
-| **World** | Reggae, Dancehall, Afrobeats, Bossa Nova, Samba, Flamenco, Tango, Bhangra, Kora Music, Gamelan |
-| **Metal** | Metal, Heavy Metal, Black Metal, Doom Metal, Progressive Metal, Djent, Metalcore, Post-Metal, Sludge |
-| **Experimental** | Experimental, Avant-Garde, Noise, Drone, Musique Concrète, Sound Collage, Glitch, Field Recording |
-| **Funk/Soul** | Funk, Soul, Motown, Disco, Gospel, Neo-Funk, Deep Funk, Psychedelic Soul |
-| **Cinematic** | Cinematic, Film Score, Epic, Trailer Music, Soundtrack, Orchestral, Heroic, Atmospheric Score |
-
-### 2.3 Mood & Atmosphere Lexicon
-
-| Category | Descriptors |
-|----------|------------|
-| **Positive** | Uplifting, Joyful, Euphoric, Hopeful, Triumphant, Celebratory, Blissful, Optimistic, Warm, Playful, Carefree, Romantic |
-| **Melancholic** | Melancholic, Nostalgic, Bittersweet, Longing, Wistful, Sentimental, Mournful, Somber, Reflective, Yearning |
-| **Dark** | Dark, Brooding, Ominous, Sinister, Haunting, Dread, Menacing, Gothic, Apocalyptic, Industrial |
-| **Energetic** | Energetic, Intense, Aggressive, Powerful, Driving, Pulsing, Explosive, Frenetic, Relentless, Anthemic |
-| **Calm** | Calm, Serene, Peaceful, Meditative, Tranquil, Ethereal, Gentle, Soothing, Hypnotic, Floating, Dreamy |
-| **Tense** | Tense, Anxious, Suspenseful, Uneasy, Restless, Urgent, Nervous, Claustrophobic, Paranoid |
-| **Atmospheric** | Atmospheric, Spacious, Expansive, Cinematic, Immersive, Textural, Lush, Sparse, Minimal, Dense |
-| **Cool** | Cool, Smooth, Groovy, Laid-back, Effortless, Swagger, Soulful, Slick, Sophisticated |
-
-### 2.4 Scenario & Imagery Descriptors
-
-These help the model place the music in a context:
-
-| Scenario | Descriptors |
-|----------|------------|
-| **Time** | Dawn, Morning, Afternoon, Golden Hour, Sunset, Twilight, Midnight, Late Night, 3 AM, Daybreak |
-| **Weather** | Rainy Day, Thunderstorm, Sunny Day, Snowfall, Foggy Morning, Heat Wave, Spring Breeze, Autumn Leaves |
-| **Place** | Coffee Shop, Rooftop, Beach, Forest, City Streets, Subway, Cathedral, Warehouse, Bedroom, Open Road |
-| **Activity** | Road Trip, Late Night Drive, Solo Walk, Dancing, Studying, Meditation, Workout, Cooking, Stargazing |
-| **Emotional Scene** | First Kiss, Saying Goodbye, Coming Home, Breaking Free, New Beginning, Solitary Reflection, Celebration |
-
-### 2.5 Production & Era Descriptors
-
-| Descriptor | Meaning |
-|------------|---------|
-| Lo-fi | Intentionally imperfect, warm, tape saturation, bedroom production |
-| Hi-fi / Polished | Clean, radio-ready, professional production |
-| Vintage / Retro | 60s, 70s, 80s, 90s era-specific production |
-| Analog | Warm, tape, tube saturation, vinyl crackle |
-| Digital / Modern | Clean, precise, contemporary production |
-| Raw / Unplugged | Minimal production, live feel, acoustic |
-| Orchestral | Full orchestra, strings, brass, woodwinds |
-| Electronic | Synthesizers, drum machines, samples |
-| Acoustic | Real instruments, no electronic elements |
-| Hybrid | Mix of acoustic and electronic elements |
-
-### 2.6 Prompt Examples by Genre
-
-**Indie Folk Ballad:**
-```
-Indie folk, melancholic, introspective, longing, rainy afternoon, acoustic guitar, gentle piano, warm male vocals, lo-fi production, slow tempo, 70s singer-songwriter
-```
-
-**Synthwave Anthem:**
-```
-Synthwave, retro electro, euphoric, driving, nighttime city drive, pulsating synthesizers, gated reverb drums, neon atmosphere, 80s production, medium tempo
-```
-
-**Lo-fi Hip-Hop Beat:**
-```
-Lo-fi hip-hop, chill, laid-back, studying, rainy coffee shop, warm vinyl crackle, jazzy piano samples, relaxed drums, boom bap, slow tempo
-```
-
-**Epic Orchestral Trailer:**
-```
-Cinematic, epic, triumphant, heroic, orchestral, dramatic build, full strings, powerful brass, thunderous percussion, choir, trailer music, slow build to explosive climax
-```
-
-**Dream Pop Love Song:**
-```
-Dream pop, ethereal, romantic, floating, sunset beach, reverb-washed guitars, breathy female vocals, shoegaze textures, warm synthesizers, medium-slow tempo
-```
-
-**Dark Electronic:**
-```
-Dark electronic, industrial, brooding, dystopian, abandoned warehouse, distorted synthesizers, heavy bass, glitch textures, menacing atmosphere, slow heavy beat
-```
-
----
-
-## Phase 3: Call the Music Generation API
-
-### 3.1 Generate Music
+## Quick start — instrumental bed
 
 ```bash
 curl -s -X POST "https://api.minimax.io/v1/music_generation" \
@@ -265,211 +29,337 @@ curl -s -X POST "https://api.minimax.io/v1/music_generation" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "music-3.0",
-    "prompt": "<MUSIC PROMPT — comma-separated descriptors>",
-    "lyrics": "<LYRICS WITH \\n LINE BREAKS>",
-    "audio_setting": {
-      "sample_rate": 44100,
-      "bitrate": 256000,
-      "format": "mp3"
-    }
-  }'
+    "is_instrumental": true,
+    "prompt": "Cinematic indie folk, warm, nostalgic, hopeful, felt piano, soft string swell, slow tempo, 76 BPM",
+    "audio_setting": {"sample_rate": 44100, "bitrate": 256000, "format": "mp3"},
+    "output_format": "url"
+  }' -o resp.json
+
+jq -r '.data.audio' resp.json | xargs curl -sL -o track.mp3
 ```
 
-### 3.2 Request Parameters
+> ⏱ **Generation takes ~3 minutes and the call blocks the whole time.** Set a client timeout of
+> at least 600s and run it in the background. A 120s shell timeout will kill it mid-flight.
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `model` | ✅ | `"music-3.0"` (recommended), `"music-2.6"`, `"music-cover"`, or free-tier variants with `-free` suffix |
-| `prompt` | Varies | 1–2000 chars. **Required** for instrumental or music-cover. Optional for vocal songs. |
-| `lyrics` | Varies | Lyrics with `\n` line breaks and `[structure tags]`. **Required** for vocal songs. Max 3000 chars. |
-| `audio_setting.sample_rate` | No | `44100` (default), `48000` |
-| `audio_setting.bitrate` | No | `128000`, `256000` (default), `320000` |
-| `audio_setting.format` | No | `"mp3"` (default), `"wav"` |
-| `is_instrumental` | No | `true` for instrumental-only (no lyrics needed). Default: `false` |
-| `reference_audio_url` | No | Required for `music-cover` model — the audio to create a cover of |
+---
 
-### 3.3 Model Selection Guide
+## ✅ Verified facts that contradict older documentation
 
-| Model | Use Case | RPM | Cost |
-|-------|----------|-----|------|
-| `music-3.0` | **Best quality** — full songs, instrumentals | 120 | Paid |
-| `music-2.6` | Previous generation, solid results | 120 | Paid |
-| `music-cover` | Cover song from reference audio | 120 | Paid |
-| `music-3.0-free` | Free tier of music-3.0 | 3 | Free |
+| Older claim | Reality (verified 2026-08-04) |
+|---|---|
+| Output is ~25 seconds | **~161 seconds measured.** The "25364" in the docs is an *example* value, not a limit |
+| Audio returns as hex only | `output_format: "url"` returns a **signed download URL in `data.audio`** |
+| `data.audio` is a separate field from any URL | **Same field** carries either hex or the URL, depending on `output_format` |
+| Only `music-3.0` and `music-cover` exist | **Six models exist**, including free-tier variants |
+
+**There is still no duration parameter and no way to place a climax at a chosen timestamp.**
+Output length is emergent — but it is long, so for anything under ~2 minutes the practical
+approach is: generate, measure, then trim and fade to fit in ffmpeg.
+
+---
+
+## Phase 0: The brief
+
+```
+[1. GENRE & STYLE] — musical DNA: genre, subgenre, era, reference sound, BPM, key
+[2. MOOD & EMOTION] — emotional arc, energy, atmosphere, time of day
+[3. LYRICS & THEME] — the story (skip entirely for instrumentals)
+[4. ARRANGEMENT] — instrumentation, dynamics, section structure, production style
+```
+
+Decide first: **song with vocals**, **instrumental**, or **cover**? That choice determines
+which parameters are required — see the table in Phase 2.
+
+---
+
+## Phase 1: Models
+
+| Model | Use | RPM | Cost |
+|-------|-----|-----|------|
+| **`music-3.0`** | **Best quality. Default choice.** | 120 | $0.15 per track (up to 5 min) |
+| `music-2.6` | Previous generation | 120 | $0.15 per track |
+| `music-cover` | Cover from reference audio | 120 | Not stated |
+| **`music-3.0-free`** | **Free tier of music-3.0 — ideal for auditioning prompts** | 3 | Free |
 | `music-2.6-free` | Free tier of music-2.6 | 3 | Free |
-| `music-cover-free` | Free tier of cover generation | 3 | Free |
+| `music-cover-free` | Free tier of cover | 3 | Free |
 
-### 3.4 Response Handling
+Paid models require a Token Plan or paid account; `-free` variants work on any API key.
 
-**Success (200):**
-```json
-{
-  "data": {
-    "audio": "hex-encoded-audio-data-or-base64",
-    "status": 2
-  },
-  "extra_info": {
-    "music_duration": 25364,
-    "music_sample_rate": 44100,
-    "music_channel": 2,
-    "bitrate": 256000,
-    "music_size": 813651
-  },
-  "base_resp": { "status_code": 0, "status_msg": "success" }
-}
-```
-
-Key fields:
-- `data.audio`: The encoded audio data. Save this as binary.
-- `extra_info.music_duration`: Duration in **milliseconds** (25364 = 25.4 seconds)
-- `extra_info.music_channel`: Always `2` (stereo)
-
-### 3.5 Save & Decode Audio
-
-```bash
-# Extract hex audio from JSON and decode to file
-curl -s -X POST "https://api.minimax.io/v1/music_generation" \
-  -H "Authorization: Bearer $MINIMAX_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "music-3.0",
-    "prompt": "'"$PROMPT"'",
-    "lyrics": "'"$LYRICS"'",
-    "audio_setting": {"sample_rate": 44100, "bitrate": 256000, "format": "mp3"}
-  }' | jq -r '.data.audio' | xxd -r -p > output_song.mp3
-```
+> 💡 **Billing is flat per generation, bucketed at "up to 5 minutes".** A 30-second track costs
+> the same $0.15 as a 5-minute one — there is no incentive to aim short. And since the peak
+> position cannot be controlled, plan on generating several takes and selecting.
+> **Audition prompts on `music-3.0-free` first** (3 RPM = one every 20s), then spend on the winner.
 
 ---
 
-## Phase 4: Cover Song Generation
+## Phase 2: Parameters
 
-### 4.1 Cover Preprocessing (music-cover model)
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `model` | string | ✅ | One of the six above |
+| `prompt` | string | conditional | Comma-separated descriptors. See the table below |
+| `lyrics` | string | conditional | `\n` line breaks + `[section tags]`. Max 3500 chars |
+| `is_instrumental` | boolean | no | `true` = no vocals. Default `false` |
+| `lyrics_optimizer` | boolean | no | `true` + empty `lyrics` → auto-writes lyrics from `prompt` |
+| `output_format` | string | no | `url` or `hex`. **Default `hex`** |
+| `stream` | boolean | no | Default `false`. Only `hex` is supported when streaming |
+| `audio_setting` | object | no | See below |
+| `audio_url` / `audio_base64` | string | conditional | Cover only. Exactly one. Mutually exclusive |
+| `cover_feature_id` | string | conditional | Cover only, two-step flow. Mutually exclusive with the above |
 
-First, preprocess the reference audio:
+### What is required, by mode
+
+| Mode | `prompt` | `lyrics` |
+|------|----------|----------|
+| **Instrumental** (`is_instrumental: true`) | ✅ **Required**, 1–2000 chars | Not required — **omit the key entirely** |
+| Song with vocals | Optional, 0–2000 chars | ✅ Required, 1–3500 chars |
+| Vocals with auto-lyrics | ✅ Required | Omit, and set `lyrics_optimizer: true` |
+| Cover | ✅ Required, 10–300 chars — describes the *target style* | Optional (ASR-extracted if omitted) |
+
+⚠️ Instrumental is the one mode where `prompt` is mandatory. And although the docs only say
+`lyrics` is "not required" there, the schema sets `minLength: 1` — so sending `"lyrics": ""`
+may be rejected. **Omit the key rather than passing an empty string.**
+
+`is_instrumental` and `lyrics_optimizer` are supported on the four text-to-music models only,
+not on `music-cover`.
+
+### `audio_setting`
+
+| Field | Options | Notes |
+|-------|---------|-------|
+| `sample_rate` | `16000, 24000, 32000, 44100` | Use `44100` |
+| `bitrate` | `32000, 64000, 128000, 256000` | Use `256000` |
+| `format` | `mp3, wav, pcm` | `wav` if the track will be heavily edited |
+
+No defaults are documented — set all three explicitly.
+
+### Lyrics section tags
+
+`[Intro]` `[Verse]` `[Pre Chorus]` `[Chorus]` `[Post Chorus]` `[Bridge]` `[Interlude]`
+`[Transition]` `[Break]` `[Hook]` `[Build Up]` `[Inst]` `[Solo]` `[Outro]`
+
+⚠️ The **lyrics-generation** endpoint emits a slightly different set — it can return `[Drop]`,
+`[Instrumental]`, `[Breakdown]`, `[Pre-Chorus]` (hyphenated) and `[Build-up]` (hyphenated), none
+of which appear in the list above. Whether the music API errors on, ignores, or interprets an
+unlisted tag is undocumented. **Normalise tags before passing lyrics from one endpoint to the
+other.** Official code examples use lowercase (`[verse]`), so case appears not to matter.
+
+There is **no BPM, key, arrangement or climax-placement parameter.** Naming a BPM inside the
+`prompt` string is an accepted convention and does influence the result, but it is a hint, not a
+control. Section tags are not documented to affect instrumental arrangement at all.
+
+---
+
+## Phase 3: Writing the prompt
+
+The `prompt` is a **comma-separated list of descriptors** — think of it as tagging a track.
+
+```
+{genre}, {subgenre}, {mood ×2-3}, {scenario}, {instrumentation}, {production}, {tempo}, {BPM}
+```
+
+**Worked examples:**
+
+```
+Cinematic indie folk, neoclassical, warm, nostalgic, hopeful, intimate, golden hour wedding,
+felt piano, fingerpicked acoustic guitar, soft string swell, cello, brushed drums,
+sparse opening building to a full emotional crescendo then gentle resolve, analog warmth,
+slow tempo, 76 BPM
+```
+
+```
+Synthwave, retro electro, euphoric, driving, night city drive, pulsating analog synthesizers,
+gated reverb drums, neon atmosphere, 80s production, medium tempo, 110 BPM
+```
+
+```
+Lo-fi hip-hop, chill, laid-back, rainy coffee shop, warm vinyl crackle, jazzy piano samples,
+relaxed boom bap drums, slow tempo, 78 BPM
+```
+
+⚠️ **When `is_instrumental: true`, strip every vocal descriptor from the prompt.** Many stock
+genre strings contain `warm harmonies`, `female vocals`, `choir` or `layered vocals` — these
+contradict the instrumental flag. `choir` counts as a vocal token even though it reads as
+orchestral.
+
+Deeper vocabulary — genres, BPM ranges, instrumentation, mood lexicon — lives in
+[references/genre-style-reference.md](references/genre-style-reference.md).
+
+---
+
+## Phase 4: Lyrics generation (optional)
+
+```bash
+curl -s -X POST "https://api.minimax.io/v1/lyrics_generation" \
+  -H "Authorization: Bearer $MINIMAX_API_KEY" -H "Content-Type: application/json" \
+  -d '{"mode": "write_full_song", "prompt": "A melancholic ballad about lost love in a rainy city", "title": "Rain on Windows"}'
+```
+
+| Param | Required | Notes |
+|-------|----------|-------|
+| `mode` | ✅ | `write_full_song` or `edit` |
+| `prompt` | no | Max 2000 chars. Empty → a random song |
+| `lyrics` | no | Existing lyrics; `edit` mode only. Max 3500 |
+| `title` | no | Preserved in the output if given |
+
+Returns `song_title`, `style_tags`, `lyrics`, `base_resp`.
+
+💡 **`style_tags` is a comma-separated descriptor string designed to be dropped straight into a
+music `prompt`.** Even for an instrumental, one lyrics call gives you model-native style
+vocabulary — then discard the lyrics. Costs **$0.01 per song**.
+
+Craft guidance in [references/lyrics-guide.md](references/lyrics-guide.md).
+
+---
+
+## Phase 5: Cover generation
+
+**One-step** — pass the reference directly:
+
+```bash
+curl -s -X POST "https://api.minimax.io/v1/music_generation" \
+  -H "Authorization: Bearer $MINIMAX_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model": "music-cover",
+       "audio_url": "https://example.com/original.mp3",
+       "prompt": "Lo-fi bedroom pop, dreamy, soft vocals, ukulele, intimate, warm",
+       "audio_setting": {"sample_rate": 44100, "bitrate": 256000, "format": "mp3"},
+       "output_format": "url"}'
+```
+
+**Two-step** — preprocess first when you want to rewrite the lyrics. **Preprocessing is free.**
 
 ```bash
 curl -s -X POST "https://api.minimax.io/v1/music_cover_preprocess" \
-  -H "Authorization: Bearer $MINIMAX_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "reference_audio_url": "https://example.com/original_song.mp3"
-  }'
+  -H "Authorization: Bearer $MINIMAX_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model": "music-cover", "audio_url": "https://example.com/original.mp3"}'
 ```
 
-Then generate the cover:
+Returns `cover_feature_id` (valid 24h), `formatted_lyrics` (ASR-extracted with section tags),
+`structure_result` (**JSON with per-section start/end timestamps in seconds**) and
+`audio_duration`. Then pass `cover_feature_id` + your rewritten `lyrics` (10–1000 chars) to
+`music_generation`.
 
-```bash
-curl -s -X POST "https://api.minimax.io/v1/music_generation" \
-  -H "Authorization: Bearer $MINIMAX_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "music-cover",
-    "prompt": "Lo-fi bedroom pop version, dreamy, soft female vocals, ukulele, gentle percussion, intimate, warm",
-    "reference_audio_url": "https://example.com/original_song.mp3",
-    "audio_setting": {"sample_rate": 44100, "bitrate": 256000, "format": "mp3"}
-  }'
-```
+**Reference audio limits:** 6 seconds – 6 minutes, ≤ 50 MB, mp3/wav/flac.
 
-The `prompt` for covers should describe the **target style transformation** (10–300 characters). Focus on what changes: genre shift, tempo change, instrumentation swap, vocal style.
+⚠️ **The Files API cannot host it.** `/v1/files/upload` has no music-related `purpose` value,
+and the music endpoints accept no `file_id`. Your only options are a publicly reachable
+`audio_url` or inline `audio_base64` (which inflates the request ~33%). A signed object-storage
+URL is the clean route.
+
+`music_cover_preprocess` accepts `music-cover` only — not `music-cover-free`.
 
 ---
 
-## Phase 5: Post-Processing
+## Phase 6: Response handling
 
-### 5.1 Inspect Audio Metadata
+✅ Verified live response:
 
-```bash
-ffprobe -v quiet -print_format json -show_format -show_streams output_song.mp3
+```json
+{
+  "data": {
+    "audio": "<hex string, OR a signed download URL when output_format=url>",
+    "status": 2
+  },
+  "trace_id": "06c11f46...",
+  "extra_info": {
+    "music_duration": 160992,
+    "music_sample_rate": 44100,
+    "music_channel": 2,
+    "bitrate": 256000,
+    "music_size": 5158939
+  },
+  "analysis_info": null,
+  "base_resp": { "status_code": 0, "status_msg": "success" }
+}
 ```
 
-### 5.2 Trim / Fade
+**Key facts, all verified:**
+- **`output_format: "url"` puts a signed URL in `data.audio`.** There is no separate `audio_url`
+  field. The default `hex` puts hex-encoded bytes in that same field. **Always set
+  `output_format` explicitly** so you know what you are parsing.
+- **The URL is signed and expires in 24 hours.** It must be used whole — truncating it strips the
+  signature and the download returns an `AccessDenied` XML body that will masquerade as an audio
+  file. Always verify with `ffprobe` after downloading.
+- `extra_info.music_duration` is in **milliseconds** (160992 = 161 s). `data.status`: `1` = in
+  progress, `2` = complete.
+- `trace_id`, `extra_info` and `analysis_info` sit at the **top level**, siblings of `data` — not
+  nested inside it.
+- Always check `base_resp.status_code == 0`. HTTP 200 does not imply success.
 
 ```bash
-# Trim to specific duration
-ffmpeg -i input.mp3 -t 180 -af "afade=t=out:st=175:d=5" trimmed.mp3
-
-# Add fade in and fade out
-ffmpeg -i input.mp3 -af "afade=t=in:d=3,afade=t=out:st=177:d=5" faded.mp3
-```
-
-### 5.3 Normalize Loudness
-
-```bash
-ffmpeg -i input.mp3 -af "loudnorm=I=-16:LRA=11:TP=-1.5" normalized.mp3
-```
-
-### 5.4 Convert Format
-
-```bash
-# MP3 to WAV (lossless)
-ffmpeg -i input.mp3 output.wav
-
-# MP3 to OGG
-ffmpeg -i input.mp3 -c:a libvorbis -q:a 6 output.ogg
-
-# Extract segment for preview
-ffmpeg -i input.mp3 -ss 00:30 -t 30 preview_30s.mp3
-```
-
-### 5.5 Generate Waveform Visualization
-
-```bash
-ffmpeg -i input.mp3 -filter_complex "showwavespic=s=1920x400:colors=#E94560|#0F3460" waveform.png
+# url
+jq -r '.data.audio' resp.json | xargs curl -sL -o track.mp3
+# hex (default)
+jq -r '.data.audio' resp.json | xxd -r -p > track.mp3
+# always verify
+ffprobe -v error -show_entries format=duration -of default=nw=1 track.mp3
 ```
 
 ---
 
-## Phase 6: Deliver Results
+## Phase 7: Post-processing
 
-Present to the user:
+Because length is emergent and the climax cannot be placed, **fitting the track to picture
+happens here.**
 
-1. **Song file path** and format
-2. **Song title** (from lyrics generation or user-provided)
-3. **Style tags** used
-4. **Duration** (human-readable)
-5. **Lyrics** (formatted with structure tags)
-6. **Music prompt** used (for iteration reference)
-7. **Metadata:** sample rate, bitrate, channels, file size
-8. **Offer iteration:** "I can adjust the genre, mood, tempo, rewrite lyrics, make it instrumental, or try a different vocal style."
+```bash
+# Inspect
+ffprobe -v quiet -print_format json -show_format -show_streams track.mp3
+
+# Find the loudest moment — locates the natural crescendo to cut against
+ffmpeg -i track.mp3 -af astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level -f null - 2>&1 | grep RMS
+
+# Trim a window and fade (e.g. 48s ending at a fade-out)
+ffmpeg -i track.mp3 -ss 12 -t 48 -af "afade=t=in:d=2,afade=t=out:st=43:d=5" bed_48s.mp3
+
+# Normalise (do this on the FINAL mix, not the bed alone)
+ffmpeg -i mix.wav -af "loudnorm=I=-14:LRA=11:TP=-1.5" master.wav
+
+# Waveform graphic
+ffmpeg -i track.mp3 -filter_complex "showwavespic=s=1920x400:colors=#d97757|#ededed" wave.png
+```
+
+**Technique for hitting a specific emotional beat:** generate 2–3 takes, run the RMS scan on
+each, and pick the take whose natural crescendo sits nearest your target — then slide the trim
+window so it lands exactly. Selection plus trimming replaces the control the API does not offer.
 
 ---
 
-## Quick Reference
+## Error codes
 
-### Prompt Formula Cheat Sheet
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1002` | Rate limit — back off (free tier is 3 RPM = one per 20s) |
+| `1004` | Authentication failed |
+| `1008` | Insufficient balance |
+| `1026` | Content flagged as sensitive |
+| `1039` | Token limit |
+| `2013` | Invalid parameters |
+| `2049` | Invalid API key |
+| `2056` | Usage limit exceeded — wait for the next 5-hour window |
 
-```
-{genre}, {subgenre}, {mood1}, {mood2}, {mood3}, {scenario}, {instrumentation}, {production}, {tempo}, {era}
-```
-
-### Supported Lyrics Structure Tags (14)
-
-`[Intro] [Verse] [Pre-Chorus] [Chorus] [Hook] [Drop] [Bridge] [Solo] [Build-up] [Instrumental] [Breakdown] [Break] [Interlude] [Outro]`
-
-### Audio Settings
-
-| Setting | Options | Default |
-|---------|---------|---------|
-| Sample Rate | 44100, 48000 | 44100 |
-| Bitrate | 128000, 256000, 320000 | 256000 |
-| Format | mp3, wav | mp3 |
-
-### Model Quick Select
-
-| Need | Model |
-|------|-------|
-| Best quality song with lyrics | `music-3.0` |
-| Best instrumental | `music-3.0` + `is_instrumental: true` |
-| Cover/remix existing song | `music-cover` |
-| Testing/experimenting (free) | `music-3.0-free` |
-| Quick draft (free) | `music-2.6-free` |
+**Rate limits:** paid models 120 RPM, 20 concurrent · free variants 3 RPM.
 
 ---
 
-## Supporting Files
+## Common failures and fixes
 
-- [Complete Music API Reference](references/api-reference.md) — All music endpoints, parameters, error codes, response schemas
-- [Lyrics Writing Guide](references/lyrics-guide.md) — Deep dive into lyrics craft: meter, rhyme, storytelling, genre conventions
-- [Genre & Style Reference](references/genre-style-reference.md) — Comprehensive genre encyclopedia with instrumentation, BPM ranges, and production notes
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Command killed at ~2 min | Generation takes ~3 min and blocks | Timeout ≥ 600s; run in background |
+| Downloaded "audio" is a few hundred bytes | Signed URL was truncated | Never truncate the URL; `ffprobe` every download |
+| Corrupt audio from hex decode | Response was a URL, not hex | Set `output_format` explicitly and branch |
+| Vocals on an "instrumental" | Vocal tokens left in the prompt | Strip `vocals`, `harmonies`, `choir` |
+| `400` on instrumental | `prompt` missing, or `lyrics: ""` sent | `prompt` is required here; omit `lyrics` entirely |
+| Track too short/long for picture | No duration control exists | Generate, measure, trim + fade in ffmpeg |
+| Crescendo in the wrong place | No timestamp control exists | Generate several takes, RMS-scan, pick and slide the trim window |
+| `1002` on every other call | Free tier is 3 RPM | Sleep 20s between free calls |
 
-When you need more detail than this SKILL.md provides, read the relevant reference file.
+---
+
+## Supporting files
+
+- [Complete API reference](references/api-reference.md) — every parameter, full schemas, error codes
+- [Genre & style reference](references/genre-style-reference.md) — genre encyclopedia, BPM ranges, instrumentation
+- [Lyrics writing guide](references/lyrics-guide.md) — meter, rhyme, storytelling, structure

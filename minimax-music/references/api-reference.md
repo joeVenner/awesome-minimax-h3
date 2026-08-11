@@ -1,237 +1,276 @@
-# MiniMax Music API — Complete Reference
+# MiniMax Music API — Complete Cloud Reference
 
-> Base URLs:
-> - Music Generation: `https://api.minimax.io/v1/music_generation`
-> - Lyrics Generation: `https://api.minimax.io/v1/lyrics_generation`
-> - Music Cover Preprocess: `https://api.minimax.io/v1/music_cover_preprocess`
-> - Auth: `Authorization: Bearer <API_KEY>` (get key from https://platform.minimax.io → Account → API Keys)
+> Host: `https://api.minimax.io`
+> Auth: `Authorization: Bearer <API_KEY>` (JWT-format platform key)
+> `Content-Type: application/json`
+>
+> Verified 2026-08-04 against the live API and the official OpenAPI source.
 
 ---
 
-## Endpoint 1: Music Generation
+## Endpoint map
 
-### POST `/v1/music_generation`
+| Purpose | Method & path |
+|---|---|
+| Generate music | `POST /v1/music_generation` |
+| Generate / edit lyrics | `POST /v1/lyrics_generation` |
+| Preprocess audio for cover | `POST /v1/music_cover_preprocess` |
 
-Generate a song from lyrics and a style prompt, or generate instrumental music.
+There is **no polling endpoint**. Music generation is a single blocking call.
 
-**Request Body:**
+---
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `model` | string | ✅ | `music-3.0`, `music-2.6`, `music-cover`, or `*-free` variants |
-| `prompt` | string | Conditional | 1–2000 chars. Required for instrumental or cover. Optional for vocal songs. |
-| `lyrics` | string | Conditional | Lyrics with `\n` line breaks. Required for vocal songs. Max ~3000 chars. |
-| `is_instrumental` | boolean | No | `true` to generate instrumental only. Default: `false` |
-| `reference_audio_url` | string | Conditional | Required for `music-cover` model |
-| `audio_setting` | object | No | Output audio configuration |
+## POST `/v1/music_generation`
 
-**`audio_setting` object:**
+Only `model` is required at the schema level. Everything else is conditionally required by mode —
+see the matrix below.
 
-| Field | Type | Default | Options |
-|-------|------|---------|---------|
-| `sample_rate` | int | 44100 | 44100, 48000 |
-| `bitrate` | int | 256000 | 128000, 256000, 320000 |
-| `format` | string | mp3 | mp3, wav |
+### Parameters
 
-**Model Options:**
+| Field | Type | Notes |
+|---|---|---|
+| `model` | string | ✅ Required. Enum below |
+| `prompt` | string | Max 2000. Style, mood, scenario as comma-separated descriptors |
+| `lyrics` | string | `minLength: 1`, `maxLength: 3500`. `\n` line breaks + `[section tags]` |
+| `is_instrumental` | boolean | Default `false`. Text-to-music models only |
+| `lyrics_optimizer` | boolean | Default `false`. `true` + empty `lyrics` → auto-writes lyrics from `prompt`. Text-to-music models only |
+| `stream` | boolean | Default `false`. Only `hex` output is supported when streaming. SSE framing is not documented |
+| `output_format` | string | `url` or `hex`. **Default `hex`** |
+| `audio_setting` | object | See below. **No defaults documented — set all three** |
+| `audio_url` | string | Cover only. Mutually exclusive with `audio_base64` and `cover_feature_id` |
+| `audio_base64` | string | Cover only. Same exclusivity |
+| `cover_feature_id` | string | Cover only, two-step flow. Same exclusivity |
 
-| Model | Description | RPM | Access |
-|-------|-------------|-----|--------|
-| `music-3.0` | Latest, best quality | 120 | Token Plan / Paid |
-| `music-2.6` | Previous generation | 120 | Token Plan / Paid |
-| `music-cover` | Cover generation from reference | 120 | Token Plan / Paid |
-| `music-3.0-free` | Free music-3.0 | 3 | All users |
-| `music-2.6-free` | Free music-2.6 | 3 | All users |
-| `music-cover-free` | Free cover generation | 3 | All users |
+### `model` enum
 
-**Prompt Requirements by Model:**
+| Model | Availability | RPM |
+|---|---|---|
+| `music-3.0` | Token Plan / paid only | 120 |
+| `music-2.6` | Token Plan / paid only | 120 |
+| `music-cover` | Token Plan / paid only | 120 |
+| `music-3.0-free` | All users via API key | 3 |
+| `music-2.6-free` | All users via API key | 3 |
+| `music-cover-free` | All users via API key | 3 |
 
-| Model | `is_instrumental` | Prompt Required? | Lyrics Required? |
-|-------|-------------------|-----------------|-----------------|
-| `music-3.0` / `*-free` | `true` | ✅ Required | ❌ Not used |
-| `music-3.0` / `*-free` | `false` (default) | Optional | ✅ Required |
-| `music-2.6` / `*-free` | `true` | ✅ Required | ❌ Not used |
-| `music-2.6` / `*-free` | `false` (default) | Optional | ✅ Required |
-| `music-cover` / `*-free` | N/A | ✅ Required (cover style) | ❌ |
+### Requirement matrix
 
-**Example Requests:**
+| Mode | `prompt` | `lyrics` |
+|---|---|---|
+| Text-to-music, `is_instrumental: true` | ✅ **Required**, 1–2000 | Not required — **omit the key** |
+| Text-to-music, with vocals | Optional, 0–2000 | ✅ Required, 1–3500 |
+| Text-to-music, `lyrics_optimizer: true` | ✅ Required | Leave empty/omitted |
+| `music-cover` | ✅ Required, **10–300** (describes the target style) | Optional, 10–1000 (ASR-extracted if omitted) |
+| `music-cover` with `cover_feature_id` | ✅ Required, 10–300 | ✅ Required, 10–1000 |
 
-```bash
-# Full song with lyrics
-curl -X POST "https://api.minimax.io/v1/music_generation" \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "music-3.0",
-    "prompt": "Indie folk, melancholic, introspective, longing, rainy afternoon, acoustic guitar, gentle piano, warm vocals",
-    "lyrics": "[Verse]\nWalking alone through autumn streets\nLeaves falling at my feet\n[Chorus]\nI remember when you said goodbye\nUnder the November sky",
-    "audio_setting": {"sample_rate": 44100, "bitrate": 256000, "format": "mp3"}
-  }'
+> The docs say only that `lyrics` is "not required" for instrumental — they never say it is
+> forbidden, ignored, or an error. But the schema sets `minLength: 1`, so `"lyrics": ""` may be
+> rejected by a strict validator. **Omit the key entirely.**
 
-# Instrumental only
-curl -X POST "https://api.minimax.io/v1/music_generation" \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "music-3.0",
-    "prompt": "Ambient electronic, meditative, serene, floating, sparse piano, warm pads, gentle arpeggios, slow tempo",
-    "is_instrumental": true,
-    "audio_setting": {"sample_rate": 44100, "bitrate": 320000, "format": "wav"}
-  }'
+### `audio_setting`
 
-# Cover song
-curl -X POST "https://api.minimax.io/v1/music_generation" \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "music-cover",
-    "prompt": "Acoustic folk version, gentle female vocals, fingerpicked guitar, intimate, warm, slow",
-    "reference_audio_url": "https://example.com/original-pop-song.mp3",
-    "audio_setting": {"sample_rate": 44100, "bitrate": 256000, "format": "mp3"}
-  }'
-```
+| Field | Options |
+|---|---|
+| `sample_rate` | `16000`, `24000`, `32000`, `44100` |
+| `bitrate` | `32000`, `64000`, `128000`, `256000` |
+| `format` | `mp3`, `wav`, `pcm` |
 
-**Success Response (200):**
+The `44100 / 256000 / mp3` triple seen throughout the docs comes from examples, not defaults.
+
+### Lyrics section tags
+
+`[Intro]` `[Verse]` `[Pre Chorus]` `[Chorus]` `[Post Chorus]` `[Bridge]` `[Interlude]`
+`[Transition]` `[Break]` `[Hook]` `[Build Up]` `[Inst]` `[Solo]` `[Outro]`
+
+⚠️ **The lyrics-generation endpoint emits a different set.** Only 10 of 14 overlap:
+
+| `music_generation` accepts | `lyrics_generation` may emit |
+|---|---|
+| `[Pre Chorus]` (space) | `[Pre-Chorus]` (hyphen) |
+| `[Build Up]` (space) | `[Build-up]` (hyphen) |
+| `[Post Chorus]`, `[Transition]`, `[Inst]` | — |
+| — | `[Drop]`, `[Instrumental]`, `[Breakdown]` |
+
+The lyrics endpoint states its output "can be directly used in the lyrics parameter", yet it can
+emit tags the music endpoint does not list. Behaviour on an unlisted tag is **not documented**.
+Normalise before passing between them. Official examples use lowercase tags, so case appears not
+to matter.
+
+### No structural control
+
+There is **no** `duration`, `length`, `bpm`, `tempo`, `key`, or `structure` parameter — the
+complete property list is `model`, `prompt`, `lyrics`, `stream`, `output_format`, `audio_setting`,
+`lyrics_optimizer`, `is_instrumental`, `audio_url`, `audio_base64`, `cover_feature_id`.
+
+Naming a BPM inside the `prompt` string is an accepted convention and influences the result, but
+it is a hint, not a control. Section tags are not documented to affect instrumental arrangement.
+
+### Reference audio limits (cover)
+
+- Duration **6 seconds – 6 minutes**
+- Size **≤ 50 MB**
+- Formats: mp3, wav, flac and other common audio formats
+
+⚠️ **The Files API cannot host it.** `/v1/files/upload` accepts only `voice_clone`,
+`prompt_audio`, `t2a_async_input`, `video_understanding` and `video_generation_input` as
+`purpose` values — none music-related — and the music endpoints accept no `file_id`. Use a
+publicly reachable `audio_url` or inline `audio_base64` (≈33% request inflation).
+
+### Response — ✅ verified live
 
 ```json
 {
   "data": {
-    "audio": "hex-encoded-audio-data",
+    "audio": "<hex string, OR a signed download URL when output_format=url>",
     "status": 2
   },
-  "trace_id": "04ede0ab069fb1ba8be5156a24b1e081",
+  "trace_id": "06c11f462840300d88d20b5d0bc905d5",
   "extra_info": {
-    "music_duration": 25364,
+    "music_duration": 173792,
     "music_sample_rate": 44100,
     "music_channel": 2,
     "bitrate": 256000,
-    "music_size": 813651
+    "music_size": 5158939
   },
   "analysis_info": null,
-  "base_resp": {
-    "status_code": 0,
-    "status_msg": "success"
-  }
-}
-```
-
-**Response Field Reference:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `data.audio` | string | Hex-encoded audio data. Decode with `xxd -r -p` |
-| `data.status` | int | `2` = success |
-| `extra_info.music_duration` | int | Duration in **milliseconds** |
-| `extra_info.music_sample_rate` | int | Sample rate in Hz |
-| `extra_info.music_channel` | int | Channel count (always `2` = stereo) |
-| `extra_info.bitrate` | int | Bitrate in bps |
-| `extra_info.music_size` | int | File size in bytes |
-| `base_resp.status_code` | int | `0` = success |
-| `base_resp.status_msg` | string | `"success"` on success |
-
-**Error Codes:**
-
-| Code | Meaning | Action |
-|------|---------|--------|
-| `400` | Bad request | Check prompt length (≤2000 chars), lyrics length, parameter values |
-| `401` | Unauthorized | Verify API key |
-| `402` | Payment required | Top up balance |
-| `429` | Rate limited | Back off; check RPM limits (3 for free, 120 for paid) |
-| `500` | Server error | Retry after 30s |
-
----
-
-## Endpoint 2: Lyrics Generation
-
-### POST `/v1/lyrics_generation`
-
-Generate or edit song lyrics with structure tags.
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `mode` | string | ✅ | `"write_full_song"` or `"edit"` |
-| `prompt` | string | No | Theme/style description. Max 2000 chars. Random if empty. |
-| `lyrics` | string | Conditional | Existing lyrics. Only for `edit` mode. Max 3500 chars. |
-| `title` | string | No | Song title. If provided, output preserves it. |
-
-**Example Requests:**
-
-```bash
-# Generate complete lyrics
-curl -X POST "https://api.minimax.io/v1/lyrics_generation" \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "write_full_song",
-    "prompt": "A cheerful summer love song about meeting at the beach, upbeat, youthful, catchy chorus"
-  }'
-
-# Edit existing lyrics
-curl -X POST "https://api.minimax.io/v1/lyrics_generation" \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "edit",
-    "prompt": "Add a bridge about overcoming distance, make the final chorus more powerful and anthemic",
-    "lyrics": "[Verse 1]\nWe met under summer skies\nYour smile caught me by surprise...",
-    "title": "Summer Promise"
-  }'
-```
-
-**Success Response (200):**
-
-```json
-{
-  "song_title": "Summer Breeze Promise",
-  "style_tags": "Pop, Summer Vibe, Romance, Lighthearted, Beach Pop",
-  "lyrics": "[Intro]\n(Ooh-ooh-ooh)\n\n[Verse 1]\nSea breeze gently through your hair\nSmiling face, like a summer dream...",
   "base_resp": { "status_code": 0, "status_msg": "success" }
 }
 ```
 
-**Response Fields:**
+- **`output_format: "url"` puts a signed URL in `data.audio`.** The declared schema documents
+  `data.audio` only for `hex` and defines no field for the URL case — the observed behaviour is
+  that the same field carries both. Always set `output_format` explicitly.
+- **The URL is signed and expires in 24 hours.** Truncating it strips the signature; the download
+  then returns an `AccessDenied` XML body that will be silently saved as a fake audio file.
+  Always verify with `ffprobe`.
+- `data.status`: `1` = in progress, `2` = complete.
+- `extra_info.music_duration` is **milliseconds**.
+- `trace_id`, `extra_info` and `analysis_info` are **top-level siblings of `data`**, not nested
+  inside it. They appear in the response but are absent from the declared schema.
+- `analysis_info` is always `null` in observed responses and is undocumented.
+- Always check `base_resp.status_code == 0`.
 
-| Field | Description |
-|-------|-------------|
-| `song_title` | Generated title (preserved if provided in request) |
-| `style_tags` | Comma-separated style descriptors — can be used directly in music prompt |
-| `lyrics` | Complete lyrics with structure tags and `\n` line breaks — ready for music generation |
+### ⚠️ Measured output duration — the "~25 second" claim is false
+
+Two independent instrumental generations on `music-3.0-free`:
+
+| Run | `music_duration` | Verified file |
+|---|---|---|
+| 1 | 160 992 ms | ≈ 161 s |
+| 2 | 173 792 ms | **173.74 s**, 5.3 MB mp3, 44.1 kHz stereo (ffprobe) |
+
+The `25364` figure that appears throughout older documentation is an **example value**, not a
+limit or a typical length. Expect roughly **2½–3 minutes** of audio per generation. For shorter
+deliverables, generate then trim — you will have ample material.
+
+### Timing
+
+**~170–190 seconds measured** per generation, as a single blocking HTTP call. Set a client
+timeout of at least 600 s and run it in the background — a 120 s shell timeout kills it
+mid-flight.
+
+### Error codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1000` / `1001` | Unknown error / timeout |
+| `1002` | Rate limit — retry later |
+| `1004` | Authentication failed |
+| `1008` | Insufficient balance |
+| `1013` | Internal service error |
+| `1024` | Internal error |
+| `1026` | Input flagged as sensitive |
+| `1027` | Output content error |
+| `1039` | Token limit |
+| `1041` | Connection limit |
+| `2013` | Invalid parameters |
+| `2049` | Invalid API key |
+| `2056` | Usage limit exceeded — wait for the next 5-hour window |
 
 ---
 
-## Endpoint 3: Music Cover Preprocess
+## POST `/v1/lyrics_generation`
 
-### POST `/v1/music_cover_preprocess`
+Required: `mode`.
 
-Preprocess reference audio before cover generation. Required before using `music-cover`.
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `mode` | string | ✅ | `write_full_song` or `edit` |
+| `prompt` | string | no | Max 2000. Theme, style, or editing direction. Empty → a random song |
+| `lyrics` | string | no | Max 3500. `edit` mode only |
+| `title` | string | no | Preserved unchanged in the output |
 
-**Request Body:**
+Response: `song_title`, `style_tags` (comma-separated descriptors, designed to drop straight into
+a music `prompt`), `lyrics`, `base_resp`. No `trace_id`.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `reference_audio_url` | string | ✅ | Public URL of the reference audio file |
-
-```bash
-curl -X POST "https://api.minimax.io/v1/music_cover_preprocess" \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"reference_audio_url": "https://example.com/song.mp3"}'
-```
+**Cost: $0.01 per song.** Not free.
 
 ---
 
-## Audio Decoding Cheat Sheet
+## POST `/v1/music_cover_preprocess`
 
-```bash
-# Save hex audio from JSON response
-curl ... | jq -r '.data.audio' | xxd -r -p > output.mp3
+Required: `model` — enum is **`music-cover` only** (`music-cover-free` is *not* accepted here,
+despite being valid on `music_generation`). Plus exactly one of `audio_url` / `audio_base64`.
 
-# Save base64 audio (if response format differs)
-curl ... | jq -r '.data.audio' | base64 -d > output.mp3
+Response:
 
-# Verify the file
-file output.mp3
-ffprobe output.mp3
+| Field | Notes |
+|---|---|
+| `cover_feature_id` | Valid **24 hours**. Identical audio returns the same id (MD5 dedupe) |
+| `formatted_lyrics` | ASR-extracted lyrics with section tags |
+| `structure_result` | JSON string: segment labels with **start/end timestamps in seconds** |
+| `audio_duration` | Reference length in seconds |
+| `trace_id`, `base_resp` | — |
+
+```json
+{"num_segments":4,"segments":[
+  {"start":0,"end":15.5,"label":"intro"},
+  {"start":15.5,"end":45.2,"label":"verse"},
+  {"start":45.2,"end":75.0,"label":"chorus"},
+  {"start":75.0,"end":90.0,"label":"outro"}]}
 ```
+
+Segment labels: `intro`, `verse`, `chorus`, `bridge`, `outro`, `inst`, `silence`.
+
+**This step is free.** Note it *analyses* reference audio — it cannot shape generated output.
+
+---
+
+## Rate limits
+
+| API | Models | RPM | Concurrent |
+|---|---|---|---|
+| Music generation | Music-3.0 / 2.6 / Cover / 2.0 | 120 | 20 |
+| Free-tier variants | `*-free` | 3 | not stated |
+
+Free tier at 3 RPM means one call per 20 seconds. To raise limits: `api@minimax.io`.
+
+---
+
+## Pricing
+
+| Model | Price |
+|---|---|
+| `music-3.0-free` / `music-2.6-free` | Free |
+| `music-3.0` / `music-2.6` | **$0.15 per track, up to 5 minutes** |
+| Lyrics generation | $0.01 per song |
+| Music cover preprocess | Free |
+| `music-cover` / `music-cover-free` | Not stated |
+
+Billing is **flat per generation**, bucketed by length — not per second and not per token. A
+30-second track costs the same as a 5-minute one.
+
+---
+
+## Known documentation inconsistencies
+
+1. Two conflicting section-tag lists between `music_generation` and `lyrics_generation`.
+2. `music-cover` has no pricing row despite appearing in the model enum and rate-limit table.
+3. The rate-limits page lists `Music-2.0`, absent from the `music_generation` enum.
+4. `music_cover_preprocess` accepts `music-cover` only, not `music-cover-free`.
+5. Doc examples use lowercase tags while the spec documents capitalized ones.
+6. The declared response schema omits `trace_id`, `extra_info` and `analysis_info`, all of which
+   are returned in practice — including `music_duration`, the most useful field.
+7. `output_format: "url"` has no documented response field; the URL arrives in `data.audio`.
+8. The `music_duration: 25364` example is widely mistaken for a duration limit. It is not —
+   measured output is 161–174 seconds.
