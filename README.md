@@ -1,12 +1,12 @@
-# 🎬🎵 Awesome MiniMax H3
+# 🎬🎙️🎵 Awesome MiniMax H3
 
-**Production-ready [Agent Skills](https://www.anthropic.com/news/agent-skills) that turn any AI agent into a professional video director and music producer — powered by [MiniMax H3](https://platform.minimax.io) and Music 3.0.**
+**Production-ready [Agent Skills](https://www.anthropic.com/news/agent-skills) that turn any AI agent into a professional video director, voice director, and music producer — powered by [MiniMax H3](https://platform.minimax.io), Speech 2.8 and Music 3.0.**
 
 Drop these into your agent's skills directory and it instantly knows how to gather creative requirements, engineer world-class prompts, orchestrate the MiniMax API end-to-end (submit → poll → download → post-process), and iterate like a working creative professional — not just fire off a raw API call.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Format: Agent Skills](https://img.shields.io/badge/format-Agent%20Skills-6366f1)](#-what-are-agent-skills)
-[![Model: MiniMax H3](https://img.shields.io/badge/model-MiniMax%20H3%20%2F%20Music%203.0-0ea5e9)](https://platform.minimax.io)
+[![Model: MiniMax H3](https://img.shields.io/badge/model-H3%20%C2%B7%20Speech%202.8%20%C2%B7%20Music%203.0-0ea5e9)](https://platform.minimax.io)
 
 ---
 
@@ -15,6 +15,7 @@ Drop these into your agent's skills directory and it instantly knows how to gath
 | Skill | Directory | Does what |
 |---|---|---|
 | 🎬 **minimax-video** | [`minimax-video/`](minimax-video) | Text-to-video, image-to-video (first/last frame), and multimodal reference-to-video generation with MiniMax H3 — up to 15s at 2K with native stereo audio |
+| 🎙️ **minimax-speech** | [`minimax-speech/`](minimax-speech) | Voiceover, narration and audiobooks with Speech 2.8 — 332 preset voices in 40+ languages, voice cloning, voice design, word-level timestamps |
 | 🎵 **minimax-music** | [`minimax-music/`](minimax-music) | Full song generation (lyrics + music), instrumental composition, AI lyric writing, and cover-song generation with MiniMax Music 3.0 |
 
 Each skill is a self-contained package: a `SKILL.md` playbook (creative brief → prompt engineering → API calls → polling → delivery → iteration) plus deep-dive `references/` docs the agent pulls in on demand.
@@ -27,6 +28,11 @@ awesome-minimax-h3/
 │       ├── h3-technical-reference.md     # Architecture & multimodal context
 │       ├── api-reference.md              # Endpoints, params, error codes
 │       └── prompt-engineering.md         # Advanced prompting techniques
+├── minimax-speech/
+│   ├── SKILL.md                          # Full TTS / voiceover playbook
+│   └── references/
+│       ├── api-reference.md              # Sync, async, streaming, cloning endpoints
+│       └── voice-catalog.md              # All 332 preset voices by language
 └── minimax-music/
     ├── SKILL.md                          # Full music generation playbook
     └── references/
@@ -41,11 +47,31 @@ awesome-minimax-h3/
 
 MiniMax exposes a raw HTTP API. These skills wrap it with the *craft* of using it well:
 
-- **Structured creative intake** — the agent asks the right clarifying questions (scenario, resolution, duration, mood, genre, structure) before touching the API, instead of guessing.
-- **Expert prompt engineering** — dedicated frameworks (scene/action/audio/context layers for video; genre/mood/lyrics/arrangement pillars for music) baked in as playbooks, not left to chance.
-- **Full lifecycle handling** — async task submission, adaptive polling with backoff, error-code triage (401/402/422/429/500), download, and post-processing (ffmpeg trimming, fades, loudness normalization, thumbnails, waveform art).
-- **Iteration built in** — each skill ends by offering concrete refinement paths (motion too subtle, text rendering off, wrong lighting, chorus not catchy, etc.) instead of a dead end.
+- **Verified against the live API** — endpoints, required parameters, status values and response schemas were confirmed by probing `api.minimax.io` directly, not copied from docs. Where the published docs are wrong (the video polling URL, for one), the skills say so and give the working call.
+- **Structured creative intake** — the agent asks the right clarifying questions (scenario, resolution, duration, mood, voice, genre, structure) before touching the API, instead of guessing.
+- **Expert prompt engineering** — dedicated frameworks baked in as playbooks: scene/action/audio/context layers for video, voice/prosody/pause/timestamp control for speech, genre/mood/lyrics/arrangement pillars for music.
+- **Full lifecycle handling, per API** — video is async (submit → poll with backoff → resolve `file_id` → download); speech and music are synchronous, and music blocks for ~3 minutes, so the skill tells the agent to raise its timeout past the default instead of killing the call mid-flight. Each skill carries its own error table — HTTP codes for video, MiniMax internal codes (`1002`, `1026`, `2056`, …) for music and speech — plus post-processing (ffmpeg trimming, fades, loudness normalization, thumbnails, waveform art).
+- **Iteration built in** — each skill ends by offering concrete refinement paths (motion too subtle, text rendering off, read too rushed, chorus not catchy, etc.) instead of a dead end.
 - **Zero lock-in** — plain Markdown + YAML frontmatter. No SDK, no plugin runtime required.
+
+---
+
+## 🎯 The three together
+
+The skills are designed to compose. A typical branded 15-second spot, end to end:
+
+```
+minimax-speech  →  narration.wav   (per-line renders + word-level timestamps)
+minimax-music   →  bed.wav         (instrumental underscore, loudness-normalized)
+minimax-video   →  clip.mp4        (2K, H3, cut to the narration timing)
+                        ↓
+              ffmpeg mux → spot.mp4
+```
+
+Because `minimax-speech` returns word-accurate timestamps (in milliseconds), the agent can cut
+picture to the read rather than guessing at durations — that's the join that makes the suite
+more than three separate generators. H3 generates its own stereo track, so at the mux step you
+either duck it under the narration or drop it with `-an` and rebuild the bed from `minimax-music`.
 
 ---
 
@@ -72,9 +98,12 @@ Sign up at [platform.minimax.io](https://platform.minimax.io) and export your ke
 export MINIMAX_API_KEY="your-api-key-here"
 ```
 
+All three skills authenticate the same way: `Authorization: Bearer $MINIMAX_API_KEY` against
+`https://api.minimax.io`. No `GroupId` and no `token:` header.
+
 ### 2. Install the requirements
 
-Both skills shell out to standard CLI tools:
+All three skills shell out to standard CLI tools:
 
 ```bash
 # macOS
@@ -89,8 +118,8 @@ sudo apt-get install curl jq ffmpeg
 **Claude Code — project-level** (available only in this repo/project):
 
 ```bash
-mkdir -p .claude/skills
-cp -r minimax-video minimax-music /path/to/your-project/.claude/skills/
+mkdir -p /path/to/your-project/.claude/skills
+cp -r minimax-video minimax-speech minimax-music /path/to/your-project/.claude/skills/
 ```
 
 **Claude Code — user-level** (available in every project, everywhere):
@@ -98,10 +127,16 @@ cp -r minimax-video minimax-music /path/to/your-project/.claude/skills/
 ```bash
 mkdir -p ~/.claude/skills
 git clone https://github.com/joeVenner/awesome-minimax-h3.git /tmp/awesome-minimax-h3
-cp -r /tmp/awesome-minimax-h3/minimax-video /tmp/awesome-minimax-h3/minimax-music ~/.claude/skills/
+cp -r /tmp/awesome-minimax-h3/minimax-{video,speech,music} ~/.claude/skills/
 ```
 
-Claude Code auto-discovers any folder under `.claude/skills/` (or `~/.claude/skills/`) containing a `SKILL.md` — no restart or registration step needed. It invokes a skill automatically when your request matches its description (e.g. *"make me a 10 second product video"* → `minimax-video`, *"write me a synthwave song"* → `minimax-music`).
+Claude Code auto-discovers any folder under `.claude/skills/` (or `~/.claude/skills/`) containing a `SKILL.md` — no restart or registration step needed. It invokes a skill automatically when your request matches its description:
+
+| You say | It runs |
+|---|---|
+| *"make me a 10 second product video"* | `minimax-video` |
+| *"narrate this script in a warm documentary voice"* | `minimax-speech` |
+| *"write me a synthwave song"* | `minimax-music` |
 
 **Any other agent harness:**
 
@@ -118,17 +153,29 @@ Claude Code auto-discovers any folder under `.claude/skills/` (or `~/.claude/ski
 - **Up to 15s at 2K resolution** with in-context super-resolution for crisp text and fine detail
 - **Native stereo audio** generated jointly with the video
 - **Precise text/brand rendering** and motion transfer from reference clips
-- **Aspect ratios:** 16:9, 9:16, 1:1, 4:3, 3:4, 21:9
+- **Aspect ratios:** `adaptive`, 16:9, 9:16, 1:1, 4:3, 3:4, 21:9
+- **Live-verified orchestration:** poll `GET /v1/query/video_generation` (the documented `/v2/…/query` form 404s), then resolve the returned `file_id` via `/v1/files/retrieve` — `duration`, `resolution` and `ratio` are all required, and there is no seed parameter, so never discard a good take
 - Genre-specific prompt boosters for product commercials, title sequences, UI/UX demos, gaming cinematics, e-commerce, and more
 
 → [`minimax-video/SKILL.md`](minimax-video/SKILL.md)
 
+## 🎙️ minimax-speech highlights
+
+- **332 preset voices across 40+ languages**, catalogued by language and intent — plus **voice cloning** from a sample and **voice design** from a written description
+- **Synchronous generation** — audio comes back in one call; async endpoint available for long-form up to 1M characters
+- **Word- and sentence-level timestamps** (`subtitle_enable`) in milliseconds, for cutting picture to narration or animating captions
+- **Inline pause control** (`<#0.45#>`) and `speech-2.8` interjection tags — `(breath)`, `(laughs)`, `(sighs)` — the entire inline control surface, since there is no SSML
+- **Prosody control:** speed, volume, pitch, emotion, `pronunciation_dict` for brand names and acronyms, `voice_modify` for timbre and effects
+- Per-line rendering technique for voiceover against picture, so every line can be re-taken independently
+
+→ [`minimax-speech/SKILL.md`](minimax-speech/SKILL.md)
+
 ## 🎵 minimax-music highlights
 
-- **Full song generation** — AI-written or user-supplied lyrics, complete with 14 structure tags (`[Verse]`, `[Chorus]`, `[Drop]`, `[Bridge]`, …)
+- **Full song generation** — AI-written or user-supplied lyrics, complete with 14 structure tags (`[Intro]`, `[Verse]`, `[Pre Chorus]`, `[Chorus]`, `[Bridge]`, `[Outro]`, …)
 - **Instrumental composition** across a genre library spanning Pop, Rock, Electronic, Hip-Hop, Jazz, Classical, World, Metal, Cinematic, and more
-- **Cover-song generation** from a reference audio track
-- **music-3.0** flagship model plus free-tier variants for rapid iteration
+- **Cover-song generation** from a reference audio track, with a free preprocessing step for rewriting lyrics
+- **Six models**, not two — `music-3.0` flagship plus `-free` variants (3 RPM) for auditioning prompts before you spend on the winner
 - Post-processing playbook: trim/fade, loudness normalization, format conversion, waveform art
 
 → [`minimax-music/SKILL.md`](minimax-music/SKILL.md)
@@ -137,7 +184,7 @@ Claude Code auto-discovers any folder under `.claude/skills/` (or `~/.claude/ski
 
 ## 🤝 Contributing
 
-Issues and PRs welcome — new genre libraries, additional reference docs, and improvements to the prompt-engineering playbooks are all fair game. Please keep changes scoped to a single skill/topic per PR.
+Issues and PRs welcome — new genre libraries, additional voice notes, extra reference docs, and improvements to the prompt-engineering playbooks are all fair game. Please keep changes scoped to a single skill/topic per PR.
 
 ## 📄 License
 
