@@ -1,7 +1,26 @@
 # MiniMax H3 Video API — Complete Reference
 
-> Base URL: `https://api.minimax.io/v2/video_generation`
-> Auth: `Authorization: Bearer <API_KEY>` (get key from https://platform.minimax.io → Account → API Keys)
+> Base URL: `https://api.minimax.io`
+> Auth: `Authorization: Bearer <API_KEY>` **only** — no `token:` header
+> (get key from https://platform.minimax.io → Account → API Keys)
+>
+> `hub.minimax.io` is a marketing website, not an API host. Requests there return an HTML 404.
+
+> ### ⚠️ Corrections verified against the live API, 2026-08-04
+> The generation endpoint lives under `/v2`, but **task status and file retrieval live under `/v1`.**
+> Earlier revisions of this file were wrong on the points below; each was confirmed by direct probe.
+>
+> | Was documented | Actual |
+> |---|---|
+> | `GET /v2/video_generation/query` | **404.** Real: `GET /v1/query/video_generation` |
+> | Query returns `video_url` | Returns **`file_id`**; exchange it at `GET /v1/files/retrieve` |
+> | `resolution`, `duration` optional | **Both required** |
+> | `duration` ∈ {5,10,15} | Any integer accepted; output runs slightly long |
+> | 6 ratios | 7 — `adaptive` included |
+> | `Pending` → `Processing` | **`Preparing`** → `Processing` → `Success`/`Failed` |
+> | Flat error object | Nested under `.error`, plus `request_id` |
+> | `GET /v2/video_generation/list` | **404 — does not exist** |
+> | `DELETE .../cancel?task_id=` | Endpoint exists but rejects the id as query param *and* as body field; correct invocation unknown |
 
 ---
 
@@ -15,11 +34,16 @@ Submits a video generation task. Returns a `task_id` for polling.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `model` | string | ✅ | `"MiniMax-H3"` |
+| `model` | string | ✅ | `"MiniMax-H3"`. Any other value → `400 this model is not supported by /v2/video_generation` |
 | `content` | object[] | ✅ | Array of multimodal inputs (see below) |
-| `resolution` | string | No | `"2K"` (default) or `"768P"` |
-| `duration` | int | No | `5`, `10`, or `15` (seconds). Default: `5` |
-| `ratio` | string | No | `"16:9"` (default), `"9:16"`, `"1:1"`, `"4:3"`, `"3:4"`, `"21:9"` |
+| `resolution` | string | ✅ | `"2K"` or `"768P"`. Omitting it → `400 cause=missing required parameter` |
+| `duration` | int | ✅ | Seconds. `5`/`10`/`15` are the documented values but **any integer is accepted** (`7` → 7.29 s output). Omitting it → `400` |
+| `ratio` | string | ✅ | `"adaptive"`, `"16:9"`, `"4:3"`, `"1:1"`, `"3:4"`, `"9:16"`, `"21:9"` |
+
+**There is no `seed` parameter.** Generations are not reproducible.
+
+**Measured output (2K @ 9:16):** 1440 × 2560, h264, **24 fps**, AAC stereo **32 kHz**.
+Audio is always generated and cannot be disabled — strip with `ffmpeg -an` if supplying your own.
 
 **Content Array Elements:**
 
@@ -106,12 +130,31 @@ curl -X POST "https://api.minimax.io/v2/video_generation" \
 { "task_id": "424010985738629" }
 ```
 
+**Error Response — nested, not flat:**
+```json
+{
+  "type": "error",
+  "error": {
+    "type": "bad_request_error",
+    "message": "invalid params, binding: expr_path=duration, cause=missing required parameter (2013)",
+    "http_code": "400"
+  },
+  "request_id": "06c112189a49e6a7fd6262fb8b8f2c91"
+}
+```
+`.error.message` names the offending field. Include `request_id` in support tickets.
+
 ---
 
-### GET `/v2/video_generation/query` — Query Task Status
+### GET `/v1/query/video_generation` — Query Task Status
+
+> ⚠️ Note the path shape: **`/v1/query/video_generation`**, not `/v2/video_generation/query`.
+> The `/v2` form returns a plain-text `404 page not found`. Since that body is not JSON,
+> `jq -r '.status'` returns `null` forever and a poll loop hangs silently until timeout.
+> Always guard the loop with a JSON-validity check.
 
 ```
-GET /v2/video_generation/query?task_id={task_id}
+GET /v1/query/video_generation?task_id={task_id}
 Authorization: Bearer <API_KEY>
 ```
 
@@ -119,43 +162,73 @@ Authorization: Bearer <API_KEY>
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | string | `"Pending"` → `"Processing"` → `"Success"` or `"Failed"` |
-| `video_url` | string | Download URL (only when `Success`) |
-| `error` | object | Error details (only when `Failed`) |
-| `created_at` | string | Task creation timestamp |
-| `updated_at` | string | Last status update timestamp |
+| `task_id` | string | Echo of the requested id |
+| `status` | string | `"Preparing"` → `"Processing"` → `"Success"` or `"Failed"` |
+| `file_id` | string | Empty until `Success`. **Not a URL** — exchange at `/v1/files/retrieve` |
+| `video_width` | int | `0` until `Success` |
+| `video_height` | int | `0` until `Success` |
+| `base_resp.status_code` | int | `0` = success, `2013` = invalid params |
+| `base_resp.status_msg` | string | Human-readable status |
+
+**Example (Success):**
+```json
+{
+  "task_id": "427190077210913",
+  "status": "Success",
+  "file_id": "427191192965277",
+  "video_width": 1440,
+  "video_height": 2560,
+  "base_resp": { "status_code": 0, "status_msg": "success" }
+}
+```
+
+An unknown `task_id` returns HTTP 200 with `base_resp.status_code: 2013` — check the code, not
+just the HTTP status.
+
+---
+
+### GET `/v1/files/retrieve` — Resolve file_id to a Download URL
+
+Mandatory second hop. The query endpoint never returns a URL.
+
+```
+GET /v1/files/retrieve?file_id={file_id}
+Authorization: Bearer <API_KEY>
+```
 
 **Example:**
 ```json
 {
-  "status": "Success",
-  "video_url": "https://minimax-output.cos.ap-southeast-1.myqcloud.com/videos/424010985738629.mp4",
-  "created_at": "2026-07-31T10:30:00Z",
-  "updated_at": "2026-07-31T10:32:15Z"
+  "file": {
+    "file_id": "427191192965277",
+    "bytes": 0,
+    "created_at": 1785847844,
+    "filename": "output.mp4",
+    "purpose": "video_generation",
+    "download_url": "https://video-product.cdn.minimax.io/inference_output/rollout/..."
+  },
+  "base_resp": { "status_code": 0, "status_msg": "success" }
 }
 ```
 
----
-
-### GET `/v2/video_generation/list` — List Tasks
-
-```
-GET /v2/video_generation/list?page=1&page_size=20
-Authorization: Bearer <API_KEY>
-```
-
-Returns paginated list of recent tasks with statuses.
+The download field is **`download_url`**. `bytes` reads `0` even for valid files — do not use it
+as a sanity check.
 
 ---
 
-### DELETE `/v2/video_generation/cancel` — Cancel Task
+### ~~GET `/v2/video_generation/list`~~ — DOES NOT EXIST
 
-```
-DELETE /v2/video_generation/cancel?task_id={task_id}
-Authorization: Bearer <API_KEY>
-```
+Returns `404 page not found`. There is no documented way to enumerate recent tasks; track your
+own `task_id`s.
 
-Cancels a pending or processing task.
+---
+
+### DELETE `/v2/video_generation/cancel` — Cancel Task (invocation unresolved)
+
+The endpoint exists — it returns a structured `bad_request_error` rather than a 404 — but it
+rejected the task id both as a query parameter and as a `{"task_id": "..."}` JSON body, in each
+case with `invalid params, invalid task_id (2013)`. The correct parameter name or location is
+unknown. **Assume a submitted task cannot be cancelled** and budget accordingly.
 
 ---
 

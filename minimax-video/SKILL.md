@@ -149,7 +149,29 @@ Response contains `file_id` — use `file_id` in the generation request, or use 
 
 ## Phase 3: Call the API
 
+> ### ⚠️ Verified against the live API on 2026-08-04
+> Earlier revisions of this skill documented a polling URL, a response schema, and a set of
+> optional parameters that **do not match the real API**. The corrections below were confirmed
+> by probing `api.minimax.io` directly. Trust this section over any older copy.
+>
+> | Previously documented | Actual |
+> |---|---|
+> | Poll `GET /v2/video_generation/query` | **404.** Real: `GET /v1/query/video_generation` |
+> | Query returns `video_url` | Returns **`file_id`** — a second `/v1/files/retrieve` call is required |
+> | `duration` / `resolution` optional | **Both are REQUIRED** |
+> | `duration` ∈ {5, 10, 15} | Any integer is accepted (`7` → 7.29 s) |
+> | 6 ratios | 7 — `adaptive` is also valid |
+> | status `Pending` → `Processing` | `Preparing` → `Processing` → `Success` / `Failed` |
+> | Flat error object | Nested `{"type":"error","error":{...},"request_id":...}` |
+> | `GET /v2/video_generation/list` | **404 — does not exist** |
+>
+> **Host:** `https://api.minimax.io`. **Auth:** `Authorization: Bearer <key>` only — no `token:`
+> header. (`hub.minimax.io` is a marketing site, not an API.)
+
 ### 3.1 Submit Generation Task
+
+`model`, `content`, `duration`, `resolution` and `ratio` are **all required**. Omitting `duration`
+or `resolution` returns `400 … cause=missing required parameter (2013)`.
 
 ```bash
 curl -s -X POST "https://api.minimax.io/v2/video_generation" \
@@ -192,9 +214,19 @@ curl -s -X POST "https://api.minimax.io/v2/video_generation" \
 { "type": "audio_url", "audio_url": { "url": "https://...", "file_id": "..." }, "role": "reference_audio" }
 ```
 
-**Resolution:** `"2K"` (default, best quality, uses in-context regeneration) or `"768P"`
-**Duration:** One of `5`, `10`, or `15` (seconds)
-**Ratio:** `"16:9"`, `"9:16"`, `"1:1"`, `"4:3"`, `"3:4"`, `"21:9"`
+**Resolution:** **Required.** `"2K"` (best quality, uses in-context regeneration) or `"768P"`.
+Any other value returns `400 … model MiniMax-H3 does not support resolution X, supported
+resolutions: 768P, 2K`.
+
+**Duration:** **Required**, integer seconds. `5`, `10` and `15` are the documented values, but
+**arbitrary integers are accepted** — a request for `7` returned a 7.29 s clip. Output length is
+approximate and runs slightly long, so generate longer than the intended cut.
+
+**Ratio:** **Required.** `"adaptive"`, `"16:9"`, `"4:3"`, `"1:1"`, `"3:4"`, `"9:16"`, `"21:9"`.
+An invalid value returns a 400 listing the full allowed set.
+
+**No seed parameter exists.** Generations are not reproducible — a good take cannot be
+re-derived. Never discard a usable render, and always generate with trim margin.
 
 ### 3.2 Handle Response
 
@@ -205,13 +237,30 @@ Success response:
 
 Save the `task_id` — generation is asynchronous. Proceed to polling.
 
+**Errors are nested**, not flat:
+```json
+{
+  "type": "error",
+  "error": {
+    "type": "bad_request_error",
+    "message": "invalid params, binding: expr_path=duration, cause=missing required parameter (2013)",
+    "http_code": "400"
+  },
+  "request_id": "06c112189a49e6a7fd6262fb8b8f2c91"
+}
+```
+Read `.error.message` — it names the offending field. Quote `request_id` in any support ticket.
+
 Error responses:
-- `400`: Invalid parameters — check content array structure, role assignments, mutual exclusivity
+- `400`: Invalid parameters — check required fields, content array structure, role assignments, mutual exclusivity
 - `401`: Invalid API key — check `$MINIMAX_API_KEY`
 - `402`: Insufficient balance — inform user to top up
-- `422`: Unprocessable — media file issue or prompt rejected
+- `422`: Unprocessable — media file issue **or content-policy rejection** (plausible on crowd/face scenes)
 - `429`: Rate limited — wait and retry with exponential backoff
 - `500`: Server error — retry after 30 seconds
+
+Internal status codes appear in `base_resp.status_code` on the query and retrieve endpoints:
+`0` = success, `2013` = invalid params.
 
 ---
 
@@ -219,15 +268,47 @@ Error responses:
 
 ### 4.1 Query Task Status
 
+> ⚠️ **The polling URL is `/v1/query/video_generation`, NOT `/v2/video_generation/query`.**
+> The `/v2` form returns a plain-text `404 page not found`. Because a 404 body is not JSON,
+> `jq -r '.status'` yields `null` on every iteration, so a poll loop built on the wrong URL
+> **spins silently until timeout and never reports why.** This is the single most damaging
+> error a previous revision of this file contained.
+
 ```bash
-curl -s "https://api.minimax.io/v2/video_generation/query?task_id=$TASK_ID" \
+curl -s "https://api.minimax.io/v1/query/video_generation?task_id=$TASK_ID" \
   -H "Authorization: Bearer $MINIMAX_API_KEY"
 ```
 
+Actual response — note there is **no `video_url` field**:
+```json
+{
+  "task_id": "427190077210913",
+  "status": "Processing",
+  "file_id": "",
+  "video_width": 0,
+  "video_height": 0,
+  "base_resp": { "status_code": 0, "status_msg": "success" }
+}
+```
+
+On success, `file_id` is populated and the dimensions are filled in:
+```json
+{
+  "task_id": "427190077210913",
+  "status": "Success",
+  "file_id": "427191192965277",
+  "video_width": 1440,
+  "video_height": 2560,
+  "base_resp": { "status_code": 0, "status_msg": "success" }
+}
+```
+
 Response fields:
-- `status`: `"Pending"` | `"Processing"` | `"Success"` | `"Failed"`
-- On success: `video_url` — downloadable video file URL
-- On failure: `error` — error details
+- `status`: `"Preparing"` → `"Processing"` → `"Success"` | `"Failed"`
+  (**`Preparing`**, not `Pending` — a check for `Pending` never matches)
+- `file_id`: empty until `Success`. **This is not a URL** — see Phase 5.
+- `video_width` / `video_height`: `0` until `Success`; useful for confirming the real output size
+- `base_resp.status_code`: `0` = success, `2013` = invalid params (e.g. unknown `task_id`)
 
 ### 4.2 Polling Strategy
 
@@ -238,21 +319,32 @@ Response fields:
 - Typical generation: 30–90 seconds for 5s video, 2–4 minutes for 15s video at 2K
 
 ```bash
-# Robust polling loop
+# Robust polling loop — correct URL, correct status values, fails loudly
 for i in $(seq 1 60); do
-  RESPONSE=$(curl -s "https://api.minimax.io/v2/video_generation/query?task_id=$TASK_ID" \
+  RESPONSE=$(curl -s "https://api.minimax.io/v1/query/video_generation?task_id=$TASK_ID" \
     -H "Authorization: Bearer $MINIMAX_API_KEY")
+
+  # Guard: a wrong URL returns non-JSON, which would otherwise loop silently to timeout
+  if ! echo "$RESPONSE" | jq -e . >/dev/null 2>&1; then
+    echo "Non-JSON response (wrong endpoint or network error): $RESPONSE"; exit 1
+  fi
+
   STATUS=$(echo "$RESPONSE" | jq -r '.status')
-  
+  CODE=$(echo "$RESPONSE" | jq -r '.base_resp.status_code')
+
+  if [ "$CODE" != "0" ]; then
+    echo "API error: $(echo "$RESPONSE" | jq -r '.base_resp.status_msg')"; exit 1
+  fi
+
   if [ "$STATUS" = "Success" ]; then
-    VIDEO_URL=$(echo "$RESPONSE" | jq -r '.video_url')
-    echo "Done! Video URL: $VIDEO_URL"
+    FILE_ID=$(echo "$RESPONSE" | jq -r '.file_id')
+    echo "Done! file_id: $FILE_ID  ($(echo "$RESPONSE" | jq -r '.video_width')x$(echo "$RESPONSE" | jq -r '.video_height'))"
     break
   elif [ "$STATUS" = "Failed" ]; then
-    echo "Generation failed: $(echo "$RESPONSE" | jq -r '.error')"
-    exit 1
+    echo "Generation failed: $RESPONSE"; exit 1
   fi
-  
+  # "Preparing" and "Processing" both mean keep waiting
+
   # Adaptive sleep
   if [ $i -le 12 ]; then sleep 5
   elif [ $i -le 24 ]; then sleep 10
@@ -264,10 +356,40 @@ done
 
 ## Phase 5: Download & Deliver
 
-### 5.1 Download the Video
+### 5.1 Resolve the file_id, then download
+
+> ⚠️ **The query endpoint never returns a URL.** It returns a `file_id`, which must be exchanged
+> for a download link via a second call. This step was missing from earlier revisions entirely.
 
 ```bash
-curl -L -o "h3_output_${TASK_ID}.mp4" "$VIDEO_URL"
+# Exchange file_id for a download URL
+curl -s "https://api.minimax.io/v1/files/retrieve?file_id=$FILE_ID" \
+  -H "Authorization: Bearer $MINIMAX_API_KEY"
+```
+
+Response — the field is **`download_url`** (not `url`, not `video_url`):
+```json
+{
+  "file": {
+    "file_id": "427191192965277",
+    "bytes": 0,
+    "created_at": 1785847844,
+    "filename": "output.mp4",
+    "purpose": "video_generation",
+    "download_url": "https://video-product.cdn.minimax.io/inference_output/rollout/..."
+  },
+  "base_resp": { "status_code": 0, "status_msg": "success" }
+}
+```
+
+Note `bytes` is reported as `0` even for a valid file — do not use it as a sanity check.
+
+```bash
+# Full resolve-and-download
+DOWNLOAD_URL=$(curl -s "https://api.minimax.io/v1/files/retrieve?file_id=$FILE_ID" \
+  -H "Authorization: Bearer $MINIMAX_API_KEY" | jq -r '.file.download_url')
+
+curl -L -o "h3_output_${TASK_ID}.mp4" "$DOWNLOAD_URL"
 ```
 
 ### 5.2 Optional: Extract Audio
@@ -295,7 +417,36 @@ Present the user with:
 2. Thumbnail preview
 3. Key metadata: resolution, duration, aspect ratio, file size
 4. The prompt used (for iteration reference)
-5. Offer: "Want me to iterate? I can adjust the prompt, change resolution/duration, add references, or regenerate with a different seed."
+5. Offer: "Want me to iterate? I can adjust the prompt, change resolution/duration, or add references."
+
+> **Do not offer to "regenerate with a different seed" — there is no seed parameter.**
+> Generations cannot be reproduced or pinned. Every re-roll is a fresh draw, which means a
+> 768P draft does not guarantee the 2K final will match it. Treat drafts as prompt validation,
+> not as previz, and keep every usable take.
+
+### 5.5 Measured output characteristics
+
+Verified from a real 2K render on 2026-08-04:
+
+| Property | Value |
+|---|---|
+| `2K` at `9:16` | **1440 × 2560** |
+| Video codec | h264 |
+| Frame rate | **24 fps** |
+| Audio | AAC **stereo, 32 000 Hz** — always present |
+| Requested `duration: 7` | actual **7.29 s** (runs slightly long) |
+| File size | ~3.4 MB per 7 s at 2K |
+| Render time | ~2 min per 7 s at 2K |
+
+`2K` in other ratios is not yet measured — read `video_width`/`video_height` from the query
+response rather than assuming, before building an edit timeline.
+
+**Audio is always generated**, and there is no parameter to suppress it. When supplying your own
+music or voiceover, strip it: `ffmpeg -i in.mp4 -an -c:v copy out.mp4`. Note the 32 kHz rate —
+resample explicitly when mixing against 44.1/48 kHz sources rather than letting ffmpeg do it
+implicitly mid-graph. Because audio is generated *jointly* with video, still describe the
+soundscape in the prompt even when you intend to discard it; leaving the audio axis undescribed
+may destabilise the visuals.
 
 ---
 
